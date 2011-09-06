@@ -49,6 +49,14 @@ class Capybara::Driver::Webkit
       invoke "click"
     end
 
+    def dblclick
+      invoke 'dblclick'
+    end
+
+    def right_click
+      invoke 'rightClick'
+    end
+
     def drag_to(element)
       invoke 'dragTo', element.native
     end
