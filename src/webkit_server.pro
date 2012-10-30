@@ -2,12 +2,25 @@ TEMPLATE = app
 TARGET = webkit_server
 DESTDIR = .
 HEADERS = \
+  EnableLogging.h \
+  Authenticate.h \
+  SetConfirmAction.h \
+  SetPromptAction.h \
+  SetPromptText.h \
+  ClearPromptText.h \
+  JavascriptAlertMessages.h \
+  JavascriptConfirmMessages.h \
+  JavascriptPromptMessages.h \
+  IgnoreSslErrors.h \
+  ResizeWindow.h \
+  CurrentUrl.h \
   RequestedUrl.h \
   ConsoleMessages.h \
   WebPage.h \
   Server.h \
   Connection.h \
   Command.h \
+  SocketCommand.h \
   Visit.h \
   Find.h \
   Reset.h \
@@ -33,8 +46,30 @@ HEADERS = \
   CommandParser.h \
   CommandFactory.h \
   SetProxy.h \
+  NullCommand.h \
+  PageLoadingCommand.h \
+  SetSkipImageLoading.h \
+  WebPageManager.h \
+  WindowFocus.h \
+  GetWindowHandles.h \
+  GetWindowHandle.h \
+  GetTimeout.h \
+  SetTimeout.h \
+  TimeoutCommand.h \
 
 SOURCES = \
+  EnableLogging.cpp \
+  Authenticate.cpp \
+  SetConfirmAction.cpp \
+  SetPromptAction.cpp \
+  SetPromptText.cpp \
+  ClearPromptText.cpp \
+  JavascriptAlertMessages.cpp \
+  JavascriptConfirmMessages.cpp \
+  JavascriptPromptMessages.cpp \
+  IgnoreSslErrors.cpp \
+  ResizeWindow.cpp \
+  CurrentUrl.cpp \
   RequestedUrl.cpp \
   ConsoleMessages.cpp \
   main.cpp \
@@ -42,6 +77,7 @@ SOURCES = \
   Server.cpp \
   Connection.cpp \
   Command.cpp \
+  SocketCommand.cpp \
   Visit.cpp \
   Find.cpp \
   Reset.cpp \
@@ -67,6 +103,16 @@ SOURCES = \
   CommandParser.cpp \
   CommandFactory.cpp \
   SetProxy.cpp \
+  NullCommand.cpp \
+  PageLoadingCommand.cpp \
+  SetTimeout.cpp \
+  GetTimeout.cpp \
+  SetSkipImageLoading.cpp \
+  WebPageManager.cpp \
+  WindowFocus.cpp \
+  GetWindowHandles.cpp \
+  GetWindowHandle.cpp \
+  TimeoutCommand.cpp \
 
 RESOURCES = webkit_server.qrc
 QT += network webkit

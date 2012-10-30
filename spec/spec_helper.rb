@@ -1,5 +1,7 @@
 require 'rspec'
 require 'rspec/autorun'
+require 'rbconfig'
+require 'capybara'
 
 PROJECT_ROOT = File.expand_path(File.join(File.dirname(__FILE__), '..')).freeze
 
@@ -15,11 +17,38 @@ $:.detect do |dir|
   end
 end
 
-require File.join(spec_dir,"spec_helper")
+RSpec.configure do |c|
+  c.filter_run_excluding :skip_on_windows => !(RbConfig::CONFIG['host_os'] =~ /mingw32/).nil?
+end
 
-require 'capybara/driver/webkit/browser'
-$webkit_browser = Capybara::Driver::Webkit::Browser.new(:socket_class => TCPSocket, :stdout => nil)
+require 'capybara/webkit'
+connection = Capybara::Webkit::Connection.new(:socket_class => TCPSocket, :stdout => nil)
+$webkit_browser = Capybara::Webkit::Browser.new(connection)
+
+if ENV['DEBUG']
+  $webkit_browser.enable_logging
+end
+
+RSpec.configure do |config|
+  config.before { $webkit_browser.reset! }
+end
+
+require File.join(spec_dir, "spec_helper")
 
 Capybara.register_driver :reusable_webkit do |app|
-  Capybara::Driver::Webkit.new(app, :browser => $webkit_browser)
+  Capybara::Webkit::Driver.new(app, :browser => $webkit_browser)
+end
+
+def with_env_vars(vars)
+  old_env_variables = {}
+  vars.each do |key, value|
+    old_env_variables[key] = ENV[key]
+    ENV[key] = value
+  end
+
+  yield
+
+  old_env_variables.each do |key, value|
+    ENV[key] = value
+  end
 end

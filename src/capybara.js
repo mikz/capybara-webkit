@@ -11,6 +11,10 @@ Capybara = {
     return this.findRelativeTo(document, xpath);
   },
 
+  currentUrl: function () {
+    return window.location.toString();
+  },
+
   findWithin: function (index, xpath) {
     return this.findRelativeTo(this.nodes[index], xpath);
   },
@@ -49,6 +53,10 @@ Capybara = {
 
     case 'disabled':
       return this.nodes[index].disabled;
+      break;
+
+    case 'multiple':
+      return this.nodes[index].multiple;
       break;
 
     default:
@@ -110,6 +118,7 @@ Capybara = {
 
   click: function (index) {
     this.mousedown(index);
+    this.focus(index);
     this.mouseup(index);
     var clickEvent = document.createEvent('MouseEvents');
     clickEvent.initMouseEvent('click', true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
@@ -144,14 +153,26 @@ Capybara = {
     eventObject.metaKey = metaKey;
     eventObject.keyCode = keyCode;
     eventObject.charCode = charCode;
+    eventObject.which = keyCode;
+    this.nodes[index].dispatchEvent(eventObject);
+  },
+
+  keyupdown: function(index, eventName, keyCode) {
+    var eventObject = document.createEvent("HTMLEvents");
+    eventObject.initEvent(eventName, true, true);
+    eventObject.keyCode = keyCode;
+    eventObject.which = keyCode;
+    eventObject.charCode = 0;
     this.nodes[index].dispatchEvent(eventObject);
   },
 
   visible: function (index) {
     var element = this.nodes[index];
     while (element) {
-      if (element.ownerDocument.defaultView.getComputedStyle(element, null).getPropertyValue("display") == 'none')
+      var style = element.ownerDocument.defaultView.getComputedStyle(element, null);
+      if (style.getPropertyValue("display") == 'none' || style.getPropertyValue("visibility") == 'hidden')
         return false;
+
       element = element.parentElement;
     }
     return true;
@@ -165,6 +186,58 @@ Capybara = {
     return this.nodes[index].value;
   },
 
+  getInnerHTML: function(index) {
+    return this.nodes[index].innerHTML;
+  },
+
+  setInnerHTML: function(index, value) {
+    this.nodes[index].innerHTML = value;
+    return true;
+  },
+
+  characterToKeyCode: function(character) {
+    var code = character.toUpperCase().charCodeAt(0);
+    var specialKeys = {
+      96: 192,  //`
+      45: 189,  //-
+      61: 187,  //=
+      91: 219,  //[
+      93: 221,  //]
+      92: 220,  //\
+      59: 186,  //;
+      39: 222,  //'
+      44: 188,  //,
+      46: 190,  //.
+      47: 191,  ///
+      127: 46,  //delete
+      126: 192, //~
+      33: 49,   //!
+      64: 50,   //@
+      35: 51,   //#
+      36: 52,   //$
+      37: 53,   //%
+      94: 54,   //^
+      38: 55,   //&
+      42: 56,   //*
+      40: 57,   //(
+      41: 48,   //)
+      95: 189,  //_
+      43: 187,  //+
+      123: 219, //{
+      125: 221, //}
+      124: 220, //|
+      58: 186,  //:
+      34: 222,  //"
+      60: 188,  //<
+      62: 190,  //>
+      63: 191   //?
+    };
+    if (specialKeys[code]) {
+      code = specialKeys[code];
+    }
+    return code;
+  },
+
   set: function (index, value) {
     var length, maxLength, node, strindex, textTypes, type;
 
@@ -173,7 +246,7 @@ Capybara = {
     textTypes = ["email", "number", "password", "search", "tel", "text", "textarea", "url"];
 
     if (textTypes.indexOf(type) != -1) {
-      this.trigger(index, "focus");
+      this.focus(index);
 
       maxLength = this.attribute(index, "maxlength");
       if (maxLength && value.length > maxLength) {
@@ -185,36 +258,39 @@ Capybara = {
       node.value = "";
       for (strindex = 0; strindex < length; strindex++) {
         node.value += value[strindex];
-        this.trigger(index, "keydown");
-        this.keypress(index, false, false, false, false, 0, value[strindex]);
-        this.trigger(index, "keyup");
+        var keyCode = this.characterToKeyCode(value[strindex]);
+        this.keyupdown(index, "keydown", keyCode);
+        this.keypress(index, false, false, false, false, value.charCodeAt(strindex), value.charCodeAt(strindex));
+        this.keyupdown(index, "keyup", keyCode);
+        this.trigger(index, "input");
       }
       this.trigger(index, "change");
-      this.trigger(index, "blur");
 
     } else if (type === "checkbox" || type === "radio") {
       if (node.checked != (value === "true")) {
-        this.click(index)
+        this.click(index);
       }
 
     } else if (type === "file") {
       this.lastAttachedFile = value;
-      this.click(index)
+      this.click(index);
 
     } else {
       node.value = value;
     }
   },
 
+  focus: function(index) {
+    this.nodes[index].focus();
+  },
+
   selectOption: function(index) {
     this.nodes[index].selected = true;
-    this.nodes[index].setAttribute("selected", "selected");
     this.trigger(index, "change");
   },
 
   unselectOption: function(index) {
     this.nodes[index].selected = false;
-    this.nodes[index].removeAttribute("selected");
     this.trigger(index, "change");
   },
 
@@ -229,7 +305,8 @@ Capybara = {
         position.x += element.offsetLeft;
         position.y += element.offsetTop;
     } while ((element = element.offsetParent));
-    position.x = Math.floor(position.x), position.y = Math.floor(position.y);
+    position.x = Math.floor(position.x);
+    position.y = Math.floor(position.y);
 
     return position;
   },
@@ -241,7 +318,9 @@ Capybara = {
         oldStyle[prop] = element.style[prop];
         element.style[prop] = newStyle[prop];
       }
-      element.offsetWidth, element.offsetHeight; // force reflow
+      // force reflow
+      element.offsetWidth;
+      element.offsetHeight;
       for (prop in oldStyle)
         element.style[prop] = oldStyle[prop];
     }
@@ -258,12 +337,14 @@ Capybara = {
       var eventObject = document.createEvent("MouseEvents");
       eventObject.initMouseEvent(eventName, true, true, window, 0, 0, 0, options.clientX || 0, options.clientY || 0, false, false, false, false, 0, null);
       element.dispatchEvent(eventObject);
-    }
+    };
     mouseTrigger('mousedown', options);
-    options.clientX += 1, options.clientY += 1;
+    options.clientX += 1;
+    options.clientY += 1;
     mouseTrigger('mousemove', options);
 
-    position = this.centerPostion(target), options = {
+    position = this.centerPostion(target);
+    options = {
       clientX: position.x,
       clientY: position.y
     };

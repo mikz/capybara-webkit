@@ -1,9 +1,9 @@
 require 'spec_helper'
-require 'capybara/driver/webkit'
+require 'capybara/webkit/driver'
 
-describe Capybara::Driver::Webkit do
+describe Capybara::Webkit::Driver do
   before do
-    @driver = Capybara::Driver::Webkit.new(TestApp, :browser => $webkit_browser)
+    @driver = Capybara::Webkit::Driver.new(TestApp, :browser => $webkit_browser)
   end
 
   it_should_behave_like "driver"
@@ -12,6 +12,7 @@ describe Capybara::Driver::Webkit do
   it_should_behave_like "driver with header support"
   it_should_behave_like "driver with status code support"
   it_should_behave_like "driver with frame support"
+  it_should_behave_like "driver with support for window switching"
 
   it "returns the rack server port" do
     @driver.server_port.should  eq(@driver.instance_variable_get(:@rack_server).port)

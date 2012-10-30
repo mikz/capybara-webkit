@@ -1,13 +1,14 @@
 #include "Evaluate.h"
 #include "WebPage.h"
+#include "WebPageManager.h"
 #include <iostream>
 
-Evaluate::Evaluate(WebPage *page, QObject *parent) : Command(page, parent) {
+Evaluate::Evaluate(WebPageManager *manager, QStringList &arguments, QObject *parent) : SocketCommand(manager, arguments, parent) {
   m_buffer = "";
 }
 
-void Evaluate::start(QStringList &arguments) {
-  QVariant result = page()->currentFrame()->evaluateJavaScript(arguments[0]);
+void Evaluate::start() {
+  QVariant result = page()->currentFrame()->evaluateJavaScript(arguments()[0]);
   addVariant(result);
   emit finished(new Response(true, m_buffer));
 }

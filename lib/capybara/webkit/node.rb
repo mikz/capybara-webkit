@@ -1,9 +1,5 @@
-class Capybara::Driver::Webkit
+module Capybara::Webkit
   class Node < Capybara::Driver::Node
-
-    class ElementNotDisplayedError < StandardError
-    end
-
     NBSP = "\xC2\xA0"
     NBSP.force_encoding("UTF-8") if NBSP.respond_to?(:force_encoding)
 
@@ -13,7 +9,7 @@ class Capybara::Driver::Webkit
 
     def [](name)
       value = invoke("attribute", name)
-      if name == 'checked' || name == 'disabled'
+      if name == 'checked' || name == 'disabled' || name == 'multiple'
         value == 'true'
       else
         value
@@ -22,14 +18,18 @@ class Capybara::Driver::Webkit
 
     def value
       if multiple_select?
-        self.find(".//option").select do |option|
-          option["selected"] == "selected"
-        end.map do |option|
-          option.value
-        end
+        self.find(".//option").select(&:selected?).map(&:value)
       else
         invoke "value"
       end
+    end
+
+    def inner_html
+      invoke 'getInnerHTML'
+    end
+
+    def inner_html=(value)
+      invoke 'setInnerHTML', value
     end
 
     def set(value)
@@ -37,7 +37,6 @@ class Capybara::Driver::Webkit
     end
 
     def select_option
-      check_visibility(self)
       invoke "selectOption"
     end
 
@@ -51,7 +50,6 @@ class Capybara::Driver::Webkit
     end
 
     def click
-      check_visibility(self)
       invoke "click"
     end
 
@@ -64,8 +62,6 @@ class Capybara::Driver::Webkit
     end
 
     def drag_to(element)
-      check_visibility(self)
-      check_visibility(element)
       invoke 'dragTo', element.native
     end
 
@@ -111,7 +107,7 @@ class Capybara::Driver::Webkit
       if allow_unattached_nodes? || attached?
         browser.command "Node", name, native, *args
       else
-        raise Capybara::Driver::Webkit::NodeNotAttachedError
+        raise Capybara::Webkit::NodeNotAttachedError
       end
     end
 
@@ -132,11 +128,7 @@ class Capybara::Driver::Webkit
     end
 
     def multiple_select?
-      self.tag_name == "select" && self["multiple"] == "multiple"
-    end
-
-    def check_visibility(element)
-      raise(ElementNotDisplayedError, "This element is not visible so it may not be interacted with") unless element.visible?
+      self.tag_name == "select" && self["multiple"]
     end
   end
 end

@@ -1,11 +1,11 @@
 #include "ConsoleMessages.h"
 #include "WebPage.h"
+#include "WebPageManager.h"
 
-ConsoleMessages::ConsoleMessages(WebPage *page, QObject *parent) : Command(page, parent) {
+ConsoleMessages::ConsoleMessages(WebPageManager *manager, QStringList &arguments, QObject *parent) : SocketCommand(manager, arguments, parent) {
 }
 
-void ConsoleMessages::start(QStringList &arguments) {
-  Q_UNUSED(arguments);
+void ConsoleMessages::start() {
   emit finished(new Response(true, page()->consoleMessages()));
 }
 

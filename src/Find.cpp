@@ -1,19 +1,20 @@
 #include "Find.h"
-#include "Command.h"
+#include "SocketCommand.h"
 #include "WebPage.h"
+#include "WebPageManager.h"
 
-Find::Find(WebPage *page, QObject *parent) : Command(page, parent) {
+Find::Find(WebPageManager *manager, QStringList &arguments, QObject *parent) : SocketCommand(manager, arguments, parent) {
 }
 
-void Find::start(QStringList &arguments) {
+void Find::start() {
   QString message;
-  QVariant result = page()->invokeCapybaraFunction("find", arguments);
+  QVariant result = page()->invokeCapybaraFunction("find", arguments());
 
   if (result.isValid()) {
     message = result.toString();
     emit finished(new Response(true, message));
   } else {
-    emit finished(new Response(false, "Invalid XPath expression"));
+    emit finished(new Response(false, QString("Invalid XPath expression")));
   }
 }
 
