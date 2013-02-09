@@ -1,6 +1,7 @@
 require 'socket'
 require 'timeout'
 require 'thread'
+require 'open3'
 
 module Capybara::Webkit
   class Connection
@@ -11,8 +12,14 @@ module Capybara::Webkit
 
     def initialize(options = {})
       @socket_class = options[:socket_class] || TCPSocket
-      @stdout = options.has_key?(:stdout) ?  options[:stdout] : $stdout
-      @command = options[:command] || SERVER_PATH
+      if options.has_key?(:stderr)
+        @output_target = options[:stderr]
+      elsif options.has_key?(:stdout)
+        warn "[DEPRECATION] The `stdout` option is deprecated.  Please use `stderr` instead."
+        @output_target = options[:stdout]
+      else
+        @output_target = $stderr
+      end
       start_server
       connect
     end
@@ -38,12 +45,12 @@ module Capybara::Webkit
     def start_server
       open_pipe
       discover_port
-      forward_stdout_in_background_thread
+      forward_output_in_background_thread
     end
 
     def open_pipe
-      @pipe = IO.popen(@command)
-      @pid = @pipe.pid
+      _, @pipe_stdout, @pipe_stderr, wait_thr = Open3.popen3(SERVER_PATH)
+      @pid = wait_thr[:pid]
       register_shutdown_hook
     end
 
@@ -62,43 +69,20 @@ module Capybara::Webkit
       else
         Process.kill("INT", @pid)
       end
+    rescue Errno::ESRCH
+      # This just means that the webkit_server process has already ended
     end
 
     def discover_port
-      if IO.select([@pipe], nil, nil, WEBKIT_SERVER_START_TIMEOUT)
-        @port = ((@pipe.first || '').match(/listening on port: (\d+)/) || [])[1].to_i
+      if IO.select([@pipe_stdout], nil, nil, WEBKIT_SERVER_START_TIMEOUT)
+        @port = ((@pipe_stdout.first || '').match(/listening on port: (\d+)/) || [])[1].to_i
       end
     end
 
-    def forward_stdout_in_background_thread
-      @stdout_thread = Thread.new do
+    def forward_output_in_background_thread
+      Thread.new do
         Thread.current.abort_on_exception = true
-        forward_stdout
-      end
-    end
-
-    def forward_stdout
-      while pipe_readable?
-        line = @pipe.readline
-        if @stdout
-          @stdout.write(line)
-          @stdout.flush
-        end
-      end
-    rescue EOFError
-    end
-
-    if !defined?(RUBY_ENGINE) || (RUBY_ENGINE == "ruby" && RUBY_VERSION <= "1.8")
-      # please note the use of IO::select() here, as it is used specifically to
-      # preserve correct signal handling behavior in ruby 1.8.
-      # https://github.com/thibaudgg/rb-fsevent/commit/d1a868bf8dc72dbca102bedbadff76c7e6c2dc21
-      # https://github.com/thibaudgg/rb-fsevent/blob/1ca42b987596f350ee7b19d8f8210b7b6ae8766b/ext/fsevent/fsevent_watch.c#L171
-      def pipe_readable?
-        IO.select([@pipe])
-      end
-    else
-      def pipe_readable?
-        !@pipe.eof?
+        IO.copy_stream(@pipe_stderr, @output_target) if @output_target
       end
     end
 
@@ -113,7 +97,7 @@ module Capybara::Webkit
     def attempt_connect
       @socket = @socket_class.open("127.0.0.1", @port)
       if defined?(Socket::TCP_NODELAY)
-        @socket.setsockopt(:IPPROTO_TCP, :TCP_NODELAY, 1)
+        @socket.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, true)
       end
     rescue Errno::ECONNREFUSED
     end

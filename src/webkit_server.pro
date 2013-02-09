@@ -2,6 +2,7 @@ TEMPLATE = app
 TARGET = webkit_server
 DESTDIR = .
 HEADERS = \
+  Version.h \
   EnableLogging.h \
   Authenticate.h \
   SetConfirmAction.h \
@@ -14,7 +15,6 @@ HEADERS = \
   IgnoreSslErrors.h \
   ResizeWindow.h \
   CurrentUrl.h \
-  RequestedUrl.h \
   ConsoleMessages.h \
   WebPage.h \
   Server.h \
@@ -26,8 +26,6 @@ HEADERS = \
   Reset.h \
   Node.h \
   JavascriptInvocation.h \
-  Url.h \
-  Source.h \
   Evaluate.h \
   Execute.h \
   FrameFocus.h \
@@ -36,7 +34,7 @@ HEADERS = \
   NetworkCookieJar.h \
   Header.h \
   Render.h \
-  body.h \
+  Body.h \
   Status.h \
   Headers.h \
   UnsupportedContentHandler.h \
@@ -56,8 +54,12 @@ HEADERS = \
   GetTimeout.h \
   SetTimeout.h \
   TimeoutCommand.h \
+  SetUrlBlacklist.h \
+  NoOpReply.h \
+  JsonSerializer.h
 
 SOURCES = \
+  Version.cpp \
   EnableLogging.cpp \
   Authenticate.cpp \
   SetConfirmAction.cpp \
@@ -70,7 +72,6 @@ SOURCES = \
   IgnoreSslErrors.cpp \
   ResizeWindow.cpp \
   CurrentUrl.cpp \
-  RequestedUrl.cpp \
   ConsoleMessages.cpp \
   main.cpp \
   WebPage.cpp \
@@ -83,8 +84,6 @@ SOURCES = \
   Reset.cpp \
   Node.cpp \
   JavascriptInvocation.cpp \
-  Url.cpp \
-  Source.cpp \
   Evaluate.cpp \
   Execute.cpp \
   FrameFocus.cpp \
@@ -113,6 +112,9 @@ SOURCES = \
   GetWindowHandles.cpp \
   GetWindowHandle.cpp \
   TimeoutCommand.cpp \
+  SetUrlBlacklist.cpp \
+  NoOpReply.cpp \
+  JsonSerializer.cpp
 
 RESOURCES = webkit_server.qrc
 QT += network webkit

@@ -12,7 +12,11 @@ module Capybara::Webkit
       if name == 'checked' || name == 'disabled' || name == 'multiple'
         value == 'true'
       else
-        value
+        if invoke("hasAttribute", name) == 'true'
+          value
+        else
+          nil
+        end
       end
     end
 
@@ -33,7 +37,7 @@ module Capybara::Webkit
     end
 
     def set(value)
-      invoke "set", value
+      invoke "set", *[value].flatten
     end
 
     def select_option
@@ -129,6 +133,10 @@ module Capybara::Webkit
 
     def multiple_select?
       self.tag_name == "select" && self["multiple"]
+    end
+
+    def ==(other)
+      invoke("equals", other.native) == "true"
     end
   end
 end

@@ -1,20 +1,24 @@
 capybara-webkit
 ===============
 
+[![Build Status](https://secure.travis-ci.org/thoughtbot/capybara-webkit.png?branch=master)](https://travis-ci.org/thoughtbot/capybara-webkit) [![Code Climate](https://codeclimate.com/badge.png)](https://codeclimate.com/github/thoughtbot/capybara-webkit)
+
 A [capybara](https://github.com/jnicklas/capybara) driver that uses [WebKit](http://webkit.org) via [QtWebKit](http://doc.qt.nokia.com/4.7/qtwebkit.html).
 
 Qt Dependency and Installation Issues
--------------
+-------------------------------------
 
 capybara-webkit depends on a WebKit implementation from Qt, a cross-platform
 development toolkit. You'll need to download the Qt libraries to build and
 install the gem. You can find instructions for downloading and installing QT on
-the [capybara-webkit wiki](https://github.com/thoughtbot/capybara-webkit/wiki/Installing-Qt-and-compiling-capybara-webkit)
+the
+[capybara-webkit wiki](https://github.com/thoughtbot/capybara-webkit/wiki/Installing-Qt-and-compiling-capybara-webkit).
+capybara-webkit requires Qt version 4.8.
 
 Windows Support
 ---------------
 
-Currently 32bit Windows will compile Capybara-webkit. Support for Windows is provided by the open source community and Windows related issues should be posted to the [mailing list](http://groups.google.com/group/capybara-webkit)
+Currently 32-bit Windows will compile capybara-webkit. Support for Windows is provided by the open source community and Windows related issues should be posted to the [mailing list](http://groups.google.com/group/capybara-webkit)
 
 Reporting Issues
 ----------------
@@ -51,7 +55,7 @@ Set your Capybara Javascript driver to webkit:
 
 In cucumber, tag scenarios with @javascript to run them using a headless WebKit browser.
 
-In RSpec, use the :js => true flag. See the [capybara documention](http://rubydoc.info/gems/capybara#Using_Capybara_with_RSpec) for more information about using capybara with RSpec.
+In RSpec, use the `:js => true` flag. See the [capybara documention](http://rubydoc.info/gems/capybara#Using_Capybara_with_RSpec) for more information about using capybara with RSpec.
 
 Take note of the transactional fixtures section of the [capybara README](https://github.com/jnicklas/capybara/blob/master/README.md).
 
@@ -96,10 +100,6 @@ capybara-webkit supports a few methods that are not part of the standard capybar
     page.driver.resize_window(500, 300)
     page.driver.evaluate_script("window.innerWidth")
     => 500
-
-**render**: render a screenshot of the current view (requires [mini_magick](https://github.com/probablycorey/mini_magick) and [ImageMagick](http://www.imagemagick.org))
-
-    page.driver.render "tmp/screenshot.png"
 
 **cookies**: allows read-only access of cookies for the current session
 
@@ -169,6 +169,10 @@ capybara-webkit supports a few methods that are not part of the standard capybar
     page.driver.console_messages.first[:message]
     => "42"
 
+**header**: set the given HTTP header for subsequent requests
+
+    page.driver.header 'Referer', 'https://www.thoughtbot.com'
+
 Contributing
 ------------
 
@@ -177,7 +181,7 @@ See the CONTRIBUTING document.
 About
 -----
 
-The capybara WebKit driver is maintained by Joe Ferris and Matt Mongeau. It was written by [thoughtbot, inc](http://thoughtbot.com/community) with the help of numerous [contributions from the open source community](https://github.com/thoughtbot/capybara-webkit/contributors).
+The capybara WebKit driver is maintained by Joe Ferris and Matt Horan. It was written by [thoughtbot, inc](http://thoughtbot.com/community) with the help of numerous [contributions from the open source community](https://github.com/thoughtbot/capybara-webkit/contributors).
 
 Code for rendering the current webpage to a PNG is borrowed from Phantom.js' implementation.
 
@@ -188,4 +192,4 @@ The names and logos for thoughtbot are trademarks of thoughtbot, inc.
 License
 -------
 
-capybara-webkit is Copyright (c) 2010-2012 thoughtbot, inc. It is free software, and may be redistributed under the terms specified in the LICENSE file.
+capybara-webkit is Copyright (c) 2010-2013 thoughtbot, inc. It is free software, and may be redistributed under the terms specified in the LICENSE file.

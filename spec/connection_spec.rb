@@ -3,7 +3,7 @@ require 'capybara/webkit/connection'
 
 describe Capybara::Webkit::Connection do
   it "boots a server to talk to" do
-    url = @rack_server.url("/")
+    url = "http://#{@rack_server.host}:#{@rack_server.port}/"
     connection.puts "Visit"
     connection.puts 1
     connection.puts url.to_s.bytesize
@@ -18,16 +18,34 @@ describe Capybara::Webkit::Connection do
     response.should include("Hey there")
   end
 
-  it 'forwards stdout to the given IO object' do
+  it 'forwards stderr to the given IO object' do
     io = StringIO.new
-    redirected_connection = Capybara::Webkit::Connection.new(:stdout => io)
+    redirected_connection = Capybara::Webkit::Connection.new(:stderr => io)
     script = 'console.log("hello world")'
+    redirected_connection.puts "EnableLogging"
+    redirected_connection.puts 0
     redirected_connection.puts "Execute"
     redirected_connection.puts 1
     redirected_connection.puts script.to_s.bytesize
     redirected_connection.print script
     sleep(0.5)
-    io.string.should include "hello world\n"
+    io.string.should =~ /hello world $/
+  end
+
+  it 'does not forward stderr to nil' do
+    IO.should_not_receive(:copy_stream)
+    Capybara::Webkit::Connection.new(:stderr => nil)
+  end
+
+  it 'prints a deprecation warning if the stdout option is used' do
+    Capybara::Webkit::Connection.any_instance.should_receive(:warn)
+    Capybara::Webkit::Connection.new(:stdout => nil)
+  end
+
+  it 'does not forward stdout to nil if the stdout option is used' do
+    Capybara::Webkit::Connection.any_instance.stub(:warn)
+    IO.should_not_receive(:copy_stream)
+    Capybara::Webkit::Connection.new(:stdout => nil)
   end
 
   it "returns the server port" do
@@ -38,7 +56,7 @@ describe Capybara::Webkit::Connection do
     socket = stub('socket')
     TCPSocket.stub(:open).and_return(socket)
     if defined?(Socket::TCP_NODELAY)
-      socket.should_receive(:setsockopt).with(:IPPROTO_TCP, :TCP_NODELAY, 1)
+      socket.should_receive(:setsockopt).with(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, true)
     else
       socket.should_not_receive(:setsockopt)
     end

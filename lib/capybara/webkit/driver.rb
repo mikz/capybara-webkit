@@ -14,8 +14,6 @@ module Capybara::Webkit
     def initialize(app, options={})
       @app = app
       @options = options
-      @rack_server = Capybara::Server.new(@app)
-      @rack_server.boot if Capybara.run_server
       @browser = options[:browser] || Browser.new(Connection.new(options))
     end
 
@@ -27,23 +25,15 @@ module Capybara::Webkit
       browser.current_url
     end
 
-    def requested_url
-      browser.requested_url
-    end
-
     def visit(path)
-      browser.visit(url(path))
+      browser.visit(path)
     end
 
     def find(query)
       browser.find(query).map { |native| Node.new(self, native) }
     end
 
-    def source
-      browser.source
-    end
-
-    def body
+    def html
       browser.body
     end
 
@@ -147,7 +137,8 @@ module Capybara::Webkit
       true
     end
 
-    def wait_until(*args)
+    def needs_server?
+      true
     end
 
     def reset!
@@ -158,15 +149,11 @@ module Capybara::Webkit
       false
     end
 
-    def render(path, options={})
+    def save_screenshot(path, options={})
       options[:width]  ||= 1000
       options[:height] ||= 10
 
       browser.render path, options[:width], options[:height]
-    end
-
-    def server_port
-      @rack_server.port
     end
 
     def cookies
@@ -177,10 +164,12 @@ module Capybara::Webkit
       []
     end
 
-    private
-
-    def url(path)
-      @rack_server.url(path)
+    def version
+      [
+        "Capybara: #{Capybara::VERSION}",
+        "capybara-webkit: #{Capybara::Driver::Webkit::VERSION}",
+        browser.version
+      ].join("\n")
     end
   end
 end

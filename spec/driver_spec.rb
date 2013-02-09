@@ -1,3 +1,5 @@
+# -*- encoding: UTF-8 -*-
+
 require 'spec_helper'
 require 'capybara/webkit/driver'
 require 'base64'
@@ -5,19 +7,37 @@ require 'base64'
 describe Capybara::Webkit::Driver do
   include AppRunner
 
+  def visit(url, driver=driver)
+    driver.visit("#{AppRunner.app_host}#{url}")
+  end
+
   context "iframe app" do
     let(:driver) do
       driver_for_app do
         get "/" do
-          if in_iframe_request?
-            p_id = "farewell"
-            msg  = "goodbye"
-            iframe = nil
+          if params[:iframe] == "true"
+            redirect '/iframe'
           else
-            p_id = "greeting"
-            msg  = "hello"
-            iframe = "<iframe id=\"f\" src=\"/?iframe=true\"></iframe>"
+            <<-HTML
+              <html>
+                <head>
+                  <style type="text/css">
+                    #display_none { display: none }
+                  </style>
+                </head>
+                <body>
+                  <iframe id="f" src="/?iframe=true"></iframe>
+                  <script type="text/javascript">
+                    document.write("<p id='greeting'>hello</p>");
+                  </script>
+                </body>
+              </html>
+            HTML
           end
+        end
+
+        get '/iframe' do
+          headers 'X-Redirected' => 'true'
           <<-HTML
             <html>
               <head>
@@ -26,23 +46,18 @@ describe Capybara::Webkit::Driver do
                 </style>
               </head>
               <body>
-                #{iframe}
                 <script type="text/javascript">
-                  document.write("<p id='#{p_id}'>#{msg}</p>");
+                  document.write("<p id='farewell'>goodbye</p>");
                 </script>
               </body>
             </html>
           HTML
         end
-
-        def in_iframe_request?
-          params[:iframe] == "true"
-        end
       end
     end
 
     before do
-      driver.visit("/")
+      visit("/")
     end
 
     it "finds frames by index" do
@@ -90,13 +105,7 @@ describe Capybara::Webkit::Driver do
 
     it "returns the current URL" do
       driver.within_frame("f") do
-        driver.current_url.should == driver_url(driver, "/?iframe=true")
-      end
-    end
-
-    it "returns the source code for the page" do
-      driver.within_frame("f") do
-        driver.source.should =~ %r{<html>.*farewell.*}m
+        driver.current_url.should == driver_url(driver, "/iframe")
       end
     end
 
@@ -111,6 +120,26 @@ describe Capybara::Webkit::Driver do
       driver.within_frame("f") do
         driver.execute_script(%<document.getElementById('farewell').innerHTML = 'yo'>)
         driver.find("//p[contains(., 'yo')]").should_not be_empty
+      end
+    end
+
+    it "returns focus to parent" do
+      original_url = driver.current_url
+
+      driver.within_frame("f") {}
+
+      driver.current_url.should == original_url
+    end
+
+    it "returns the headers for the page" do
+      driver.within_frame("f") do
+        driver.response_headers['X-Redirected'].should == "true"
+      end
+    end
+
+    it "returns the status code for the page" do
+      driver.within_frame("f") do
+        driver.status_code.should == 200
       end
     end
   end
@@ -135,15 +164,17 @@ describe Capybara::Webkit::Driver do
     end
 
     it "raises error whose message references the actual missing url" do
-      expect { driver.visit("/") }.to raise_error(Capybara::Webkit::InvalidResponseError, /inner-not-found/)
+      expect { visit("/") }.to raise_error(Capybara::Webkit::InvalidResponseError, /inner-not-found/)
     end
   end
 
   context "redirect app" do
     let(:driver) do
       driver_for_app do
+        enable :sessions
+
         get '/target' do
-          headers 'X-Redirected' => 'true'
+          headers 'X-Redirected' => (session.delete(:redirected) || false).to_s
           "<p>#{env['CONTENT_TYPE']}</p>"
         end
 
@@ -164,41 +195,49 @@ describe Capybara::Webkit::Driver do
         end
 
         get '/redirect-me' do
-          redirect '/target'
+          if session[:redirected]
+            redirect '/target'
+          else
+            session[:redirected] = true
+            redirect '/redirect-me'
+          end
         end
       end
     end
 
     it "should redirect without content type" do
-      driver.visit("/form")
+      visit("/form")
       driver.find("//input").first.click
       driver.find("//p").first.text.should == ""
     end
 
     it "returns the current URL when changed by pushState after a redirect" do
-      driver.visit("/redirect-me")
+      visit("/redirect-me")
       driver.current_url.should == driver_url(driver, "/target")
       driver.execute_script("window.history.pushState({}, '', '/pushed-after-redirect')")
       driver.current_url.should == driver_url(driver, "/pushed-after-redirect")
     end
 
     it "returns the current URL when changed by replaceState after a redirect" do
-      driver.visit("/redirect-me")
+      visit("/redirect-me")
       driver.current_url.should == driver_url(driver, "/target")
       driver.execute_script("window.history.replaceState({}, '', '/replaced-after-redirect')")
       driver.current_url.should == driver_url(driver, "/replaced-after-redirect")
     end
 
     it "should make headers available through response_headers" do
-      driver.visit('/redirect-me')
+      visit('/redirect-me')
       driver.response_headers['X-Redirected'].should == "true"
+      visit('/target')
+      driver.response_headers['X-Redirected'].should == "false"
     end
 
     it "should make the status code available through status_code" do
-      driver.visit('/redirect-me')
+      visit('/redirect-me')
+      driver.status_code.should == 200
+      visit('/target')
       driver.status_code.should == 200
     end
-
   end
 
   context "css app" do
@@ -211,14 +250,39 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "renders unsupported content types gracefully" do
-      driver.body.should =~ /css/
+      driver.html.should =~ /css/
     end
 
     it "sets the response headers with respect to the unsupported request" do
       driver.response_headers["Content-Type"].should == "text/css"
+    end
+
+    it "does not wrap the content in HTML tags" do
+      driver.html.should_not =~ /<html>/
+    end
+  end
+
+  context "html app" do
+    let(:driver) do
+      driver_for_html(<<-HTML)
+        <html>
+          <head>
+            <title>Hello HTML</title>
+          </head>
+          <body>
+            <h1>This Is HTML!</h1>
+          </body>
+        </html>
+      HTML
+    end
+
+    before { visit("/") }
+
+    it "does not strip HTML tags" do
+      driver.html.should =~ /<html>/
     end
   end
 
@@ -250,12 +314,12 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "handles anchor tags" do
-      driver.visit("#test")
+      visit("#test")
       driver.find("//*[contains(., 'hello')]").should_not be_empty
-      driver.visit("#test")
+      visit("#test")
       driver.find("//*[contains(., 'hello')]").should_not be_empty
     end
 
@@ -295,7 +359,7 @@ describe Capybara::Webkit::Driver do
     end
 
     it "returns the current URL" do
-      driver.visit "/hello/world?success=true"
+      visit "/hello/world?success=true"
       driver.current_url.should == driver_url(driver, "/hello/world?success=true")
     end
 
@@ -310,17 +374,13 @@ describe Capybara::Webkit::Driver do
     end
 
     it "does not double-encode URLs" do
-      driver.visit("/hello/world?success=%25true")
+      visit("/hello/world?success=%25true")
       driver.current_url.should =~ /success=\%25true/
     end
 
     it "visits a page with an anchor" do
-      driver.visit("/hello#display_none")
+      visit("/hello#display_none")
       driver.current_url.should =~ /hello#display_none/
-    end
-
-    it "returns the source code for the page" do
-      driver.source.should =~ %r{<html>.*greeting.*}m
     end
 
     it "evaluates Javascript and returns a string" do
@@ -345,6 +405,11 @@ describe Capybara::Webkit::Driver do
 
     it "evaluates Javascript and returns null" do
       result = driver.evaluate_script(%<(function () {})()>)
+      result.should == nil
+    end
+
+    it "evaluates Infinity and returns null" do
+      result = driver.evaluate_script(%<Infinity>)
       result.should == nil
     end
 
@@ -407,16 +472,39 @@ describe Capybara::Webkit::Driver do
     end
   end
 
+  context "svg app" do
+    let(:driver) do
+      driver_for_html(<<-HTML)
+        <html>
+          <body>
+            <svg xmlns="http://www.w3.org/2000/svg" version="1.1" height="100">
+              <text x="10" y="25" fill="navy" font-size="15" id="navy_text">In the navy!</text>
+            </svg>
+          </body>
+        </html>
+      HTML
+    end
+
+    before { visit("/") }
+
+    it "should handle text for svg elements" do
+      driver.find("//*[@id='navy_text']").first.text.should == "In the navy!"
+    end
+  end
+
   context "console messages app" do
     let(:driver) do
       driver_for_html(<<-HTML)
         <html>
           <head>
+          <meta http-equiv="content-type" content="text/html; charset=UTF-8">
           </head>
           <body>
             <script type="text/javascript">
               console.log("hello");
               console.log("hello again");
+              console.log("hello\\nnewline");
+              console.log("𝄞");
               oops
             </script>
           </body>
@@ -424,19 +512,23 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "collects messages logged to the console" do
       url = driver_url(driver, "/")
       message = driver.console_messages.first
       message.should include :source => url, :message => "hello"
-      # QtWebKit returns different line numbers depending on the version
-      [5, 6].should include(message[:line_number])
-      driver.console_messages.length.should eq 3
+      message[:line_number].should == 6
+      driver.console_messages.length.should eq 5
     end
 
     it "logs errors to the console" do
       driver.error_messages.length.should eq 1
+    end
+
+    it "supports multi-line console messages" do
+      message = driver.console_messages[2]
+      message[:message].should == "hello\nnewline"
     end
 
     it "empties the array when reset" do
@@ -444,6 +536,16 @@ describe Capybara::Webkit::Driver do
       driver.console_messages.should be_empty
     end
 
+    it "supports console messages from an unknown source" do
+      driver.execute_script("console.log('hello')")
+      driver.console_messages.last[:message].should == 'hello'
+      driver.console_messages.last[:source].should be_nil
+      driver.console_messages.last[:line_number].should be_nil
+    end
+
+    it "escapes unicode console messages" do
+      driver.console_messages[3][:message].should == '𝄞'
+    end
   end
 
   context "javascript dialog interaction" do
@@ -455,17 +557,17 @@ describe Capybara::Webkit::Driver do
             </head>
             <body>
               <script type="text/javascript">
-                alert("Alert Text Goes Here");
+                alert("Alert Text\\nGoes Here");
               </script>
             </body>
           </html>
         HTML
       end
 
-      before { driver.visit("/") }
+      before { visit("/") }
 
       it "should let me read my alert messages" do
-        driver.alert_messages.first.should == "Alert Text Goes Here"
+        driver.alert_messages.first.should == "Alert Text\nGoes Here"
       end
 
       it "empties the array when reset" do
@@ -495,7 +597,7 @@ describe Capybara::Webkit::Driver do
         HTML
       end
 
-      before { driver.visit("/") }
+      before { visit("/") }
 
       it "should default to accept the confirm" do
         driver.find("//input").first.click
@@ -529,10 +631,16 @@ describe Capybara::Webkit::Driver do
       it "resets to the default of accepting confirms" do
         driver.dismiss_js_confirms!
         driver.reset!
-        driver.visit("/")
+        visit("/")
         driver.find("//input").first.click
         driver.console_messages.first[:message].should == "hello"
       end
+
+      it "supports multi-line confirmation messages" do
+        driver.execute_script("confirm('Hello\\nnewline')")
+        driver.confirm_messages.first.should == "Hello\nnewline"
+      end
+
     end
 
     context "on a prompt app" do
@@ -557,7 +665,7 @@ describe Capybara::Webkit::Driver do
         HTML
       end
 
-      before { driver.visit("/") }
+      before { visit("/") }
 
       it "should default to dismiss the prompt" do
         driver.find("//input").first.click
@@ -608,10 +716,16 @@ describe Capybara::Webkit::Driver do
       it "returns the prompt action to dismiss on reset" do
         driver.accept_js_prompts!
         driver.reset!
-        driver.visit("/")
+        visit("/")
         driver.find("//input").first.click
         driver.console_messages.first[:message].should == "goodbye"
       end
+
+      it "supports multi-line prompt messages" do
+        driver.execute_script("prompt('Hello\\nnewline')")
+        driver.prompt_messages.first.should == "Hello\nnewline"
+      end
+
     end
   end
 
@@ -650,7 +764,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "returns a textarea's value" do
       driver.find("//textarea").first.value.should == "what a wonderful area for text"
@@ -728,7 +842,7 @@ describe Capybara::Webkit::Driver do
       end
 
       it "does not modify the selected attribute of a new selection" do
-        monkey_option['selected'].should be_empty
+        monkey_option['selected'].should be_nil
       end
 
       it "returns the old value when a reset button is clicked" do
@@ -859,7 +973,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "triggers mouse events" do
       driver.find("//a").first.click
@@ -911,7 +1025,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     let(:newtext) { 'newvalue' }
 
@@ -980,7 +1094,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "clicks an element" do
       driver.find("//a").first.click
@@ -1028,7 +1142,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "evaluates nested xpath expressions" do
       parent = driver.find("//*[@id='parent']").first
@@ -1050,7 +1164,7 @@ describe Capybara::Webkit::Driver do
           %{<html><body><a href="/result">Go</a></body></html>}
         end
       end
-      driver.visit("/")
+      visit("/", driver)
       driver.find("//a").first.click
       result.should == "finished"
     end
@@ -1073,7 +1187,7 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "raises a webkit error for the requested url" do
       expect {
@@ -1108,12 +1222,12 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "raises a webkit error and then continues" do
       driver.find("//input").first.click
       expect { driver.find("//p") }.to raise_error(Capybara::Webkit::InvalidResponseError)
-      driver.visit("/")
+      visit("/")
       driver.find("//p").first.text.should == "hello"
     end
   end
@@ -1137,7 +1251,7 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "doesn't crash from alerts" do
       driver.find("//p").first.text.should == "success"
@@ -1160,13 +1274,13 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     before do
       driver.header('user-agent', 'capybara-webkit/custom-user-agent')
       driver.header('x-capybara-webkit-header', 'x-capybara-webkit-header')
       driver.header('accept', 'text/html')
-      driver.visit('/')
+      visit('/')
     end
 
     it "can set user_agent" do
@@ -1190,7 +1304,7 @@ describe Capybara::Webkit::Driver do
 
     it "can reset all custom header" do
       driver.reset!
-      driver.visit('/')
+      visit('/')
       driver.find('id("user-agent")').first.text.should_not == 'capybara-webkit/custom-user-agent'
       driver.evaluate_script('navigator.userAgent').should_not == 'capybara-webkit/custom-user-agent'
       driver.find('id("x-capybara-webkit-header")').first.text.should be_empty
@@ -1207,7 +1321,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "raises a webkit error for the requested url" do
       make_the_server_go_away
@@ -1238,6 +1352,8 @@ describe Capybara::Webkit::Driver do
           <head>
             <style type="text/css">
               p { font-family: "Verdana"; }
+              p:before { font-family: "Verdana"; }
+              p:after { font-family: "Verdana"; }
             </style>
           </head>
           <body>
@@ -1247,13 +1363,24 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
-    it "ignores custom fonts" do
-      font_family = driver.evaluate_script(<<-SCRIPT)
+    let(:font_family) do
+      driver.evaluate_script(<<-SCRIPT)
         var element = document.getElementById("text");
         element.ownerDocument.defaultView.getComputedStyle(element, null).getPropertyValue("font-family");
       SCRIPT
+    end
+
+    it "ignores custom fonts" do
+      font_family.should == "Arial"
+    end
+
+    it "ignores custom fonts before an element" do
+      font_family.should == "Arial"
+    end
+
+    it "ignores custom fonts after an element" do
       font_family.should == "Arial"
     end
   end
@@ -1272,7 +1399,7 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     def echoed_cookie
       driver.find('id("cookie")').first.text
@@ -1280,19 +1407,19 @@ describe Capybara::Webkit::Driver do
 
     it "remembers the cookie on second visit" do
       echoed_cookie.should == ""
-      driver.visit "/"
+      visit "/"
       echoed_cookie.should == "abc"
     end
 
     it "uses a custom cookie" do
       driver.browser.set_cookie 'cookie=abc; domain=127.0.0.1; path=/'
-      driver.visit "/"
+      visit "/"
       echoed_cookie.should == "abc"
     end
 
     it "clears cookies" do
       driver.browser.clear_cookies
-      driver.visit "/"
+      visit "/"
       echoed_cookie.should == ""
     end
 
@@ -1323,7 +1450,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     before { set_automatic_reload false }
     after { set_automatic_reload true }
@@ -1382,7 +1509,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "builds up node paths correctly" do
       cases = {
@@ -1420,7 +1547,7 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "handles overflow hidden" do
       driver.find("//div[@id='overflow']").first.text.should == "Overflow"
@@ -1448,7 +1575,7 @@ describe Capybara::Webkit::Driver do
 
     it "loads a page without error" do
       10.times do
-        driver.visit("/redirect")
+        visit("/redirect")
         driver.find("//p").first.text.should == "finished"
       end
     end
@@ -1475,11 +1602,11 @@ describe Capybara::Webkit::Driver do
       HTML
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "displays the message on subsequent page loads" do
       driver.find("//span[contains(.,'localStorage is enabled')]").should be_empty
-      driver.visit "/"
+      visit "/"
       driver.find("//span[contains(.,'localStorage is enabled')]").should_not be_empty
     end
   end
@@ -1507,11 +1634,11 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "submits a form without clicking" do
       driver.find("//form")[0].submit
-      driver.body.should include "Congrats"
+      driver.html.should include "Congrats"
     end
   end
 
@@ -1563,7 +1690,7 @@ describe Capybara::Webkit::Driver do
   context "keypress app" do
     let(:driver) { driver_for_key_body "keypress" }
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "returns the charCode for the keypressed" do
       charCode_for("a").should == "97"
@@ -1624,26 +1751,14 @@ describe Capybara::Webkit::Driver do
 
   context "keydown app" do
     let(:driver) { driver_for_key_body "keydown" }
-    before { driver.visit("/") }
+    before { visit("/") }
     it_behaves_like "a keyupdown app"
   end
 
   context "keyup app" do
     let(:driver) { driver_for_key_body "keyup" }
-    before { driver.visit("/") }
+    before { visit("/") }
     it_behaves_like "a keyupdown app"
-  end
-
-  context "null byte app" do
-    let(:driver) do
-      driver_for_html("Hello\0World")
-    end
-
-    before { driver.visit("/") }
-
-    it "should include all the bytes in the source" do
-      driver.source.should == "Hello\0World"
-    end
   end
 
   context "javascript new window app" do
@@ -1667,24 +1782,24 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "has the expected text in the new window" do
-      driver.visit("/new_window")
+      visit("/new_window")
       driver.within_window(driver.window_handles.last) do
         driver.find("//p").first.text.should == "finished"
       end
     end
 
     it "waits for the new window to load" do
-      driver.visit("/new_window?sleep=1")
+      visit("/new_window?sleep=1")
       driver.within_window(driver.window_handles.last) do
         driver.find("//p").first.text.should == "finished"
       end
     end
 
     it "waits for the new window to load when the window location has changed" do
-      driver.visit("/new_window?sleep=2")
+      visit("/new_window?sleep=2")
       driver.execute_script("setTimeout(function() { window.location = 'about:blank' }, 1000)")
       driver.within_window(driver.window_handles.last) do
         driver.find("//p").first.text.should == "finished"
@@ -1692,27 +1807,27 @@ describe Capybara::Webkit::Driver do
     end
 
     it "switches back to the original window" do
-      driver.visit("/new_window")
+      visit("/new_window")
       driver.within_window(driver.window_handles.last) { }
       driver.find("//p").first.text.should == "bananas"
     end
 
     it "supports finding a window by name" do
-      driver.visit("/new_window")
+      visit("/new_window")
       driver.within_window('myWindow') do
         driver.find("//p").first.text.should == "finished"
       end
     end
 
     it "supports finding a window by title" do
-      driver.visit("/new_window?sleep=5")
+      visit("/new_window?sleep=5")
       driver.within_window('My New Window') do
         driver.find("//p").first.text.should == "finished"
       end
     end
 
     it "supports finding a window by url" do
-      driver.visit("/new_window?test")
+      visit("/new_window?test")
       driver.within_window(driver_url(driver, "/?test")) do
         driver.find("//p").first.text.should == "finished"
       end
@@ -1725,12 +1840,12 @@ describe Capybara::Webkit::Driver do
 
     it "has a number of window handles equal to the number of open windows" do
       driver.window_handles.size.should == 1
-      driver.visit("/new_window")
+      visit("/new_window")
       driver.window_handles.size.should == 2
     end
 
     it "closes new windows on reset" do
-      driver.visit("/new_window")
+      visit("/new_window")
       last_handle = driver.window_handles.last
       driver.reset!
       driver.window_handles.should_not include(last_handle)
@@ -1755,7 +1870,7 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    driver.visit("/new_window")
+    visit("/new_window", driver)
     driver.cookies['session_id'].should == session_id
   end
 
@@ -1792,11 +1907,11 @@ describe Capybara::Webkit::Driver do
       end
     end
 
-    before { driver.visit("/") }
+    before { visit("/") }
 
     it "raises error for any loadFinished failure" do
       expect do
-        driver.visit("/outer")
+        visit("/outer")
         sleep 1
         driver.find("//body")
       end.to raise_error(Capybara::Webkit::InvalidResponseError)
@@ -1807,7 +1922,7 @@ describe Capybara::Webkit::Driver do
     let(:driver) do
       driver_for_app do
         get "/" do
-          if env["HTTP_AUTHORIZATION"]
+          if env["HTTP_AUTHORIZATION"] == "Basic #{Base64.encode64("user:password").strip}"
             env["HTTP_AUTHORIZATION"]
           else
             headers "WWW-Authenticate" => 'Basic realm="Secure Area"'
@@ -1820,8 +1935,95 @@ describe Capybara::Webkit::Driver do
 
     it "can authenticate a request" do
       driver.browser.authenticate('user', 'password')
-      driver.visit("/")
-      driver.body.should include("Basic "+Base64.encode64("user:password").strip)
+      visit("/")
+      driver.html.should include("Basic "+Base64.encode64("user:password").strip)
+    end
+
+    it "returns 401 for incorrectly authenticated request" do
+      driver.browser.authenticate('user1', 'password1')
+      driver.browser.timeout = 2
+      lambda { visit("/") }.should_not raise_error(Timeout::Error)
+      driver.status_code.should == 401
+    end
+
+    it "returns 401 for unauthenticated request" do
+      driver.browser.timeout = 2
+      lambda { visit("/") }.should_not raise_error(Timeout::Error)
+      driver.status_code.should == 401
+    end
+  end
+
+  describe "url blacklisting" do
+    let(:driver) do
+      driver_for_app do
+        get "/" do
+          <<-HTML
+          <html>
+            <body>
+              <script src="/script"></script>
+              <iframe src="http://example.com/path" id="frame1"></iframe>
+              <iframe src="http://example.org/path/to/file" id="frame2"></iframe>
+              <iframe src="/frame" id="frame3"></iframe>
+            </body>
+          </html>
+          HTML
+        end
+
+        get "/frame" do
+          <<-HTML
+          <html>
+            <body>
+              <p>Inner</p>
+            </body>
+          </html>
+          HTML
+        end
+
+        get "/script" do
+          <<-JS
+          document.write('<p>Script Run</p>')
+          JS
+        end
+      end
+    end
+
+    before do
+      driver.browser.url_blacklist = ["http://example.org/path/to/file",
+                                      "http://example.com",
+                                      "#{AppRunner.app_host}/script"]
+    end
+
+    it "should not fetch urls blocked by host" do
+      visit("/")
+      driver.within_frame('frame1') do
+        driver.find("//body").first.text.should be_empty
+      end
+    end
+
+    it "should not fetch urls blocked by path" do
+      visit('/')
+      driver.within_frame('frame2') do
+        driver.find("//body").first.text.should be_empty
+      end
+    end
+
+    it "should not fetch blocked scripts" do
+      visit("/")
+      driver.html.should_not include("Script Run")
+    end
+
+    it "should fetch unblocked urls" do
+      visit('/')
+      driver.within_frame('frame3') do
+        driver.find("//p").first.text.should == "Inner"
+      end
+    end
+
+    it "returns a status code for blocked urls" do
+      visit("/")
+      driver.within_frame('frame1') do
+        driver.status_code.should == 200
+      end
     end
   end
 
@@ -1852,41 +2054,41 @@ describe Capybara::Webkit::Driver do
 
     it "should not raise a timeout error when zero" do
       driver.browser.timeout = 0
-      lambda { driver.visit("/") }.should_not raise_error(Capybara::TimeoutError)
+      lambda { visit("/") }.should_not raise_error(Timeout::Error)
     end
 
     it "should raise a timeout error" do
       driver.browser.timeout = 1
-      lambda { driver.visit("/") }.should raise_error(Capybara::TimeoutError, "Request timed out after 1 second")
+      lambda { visit("/") }.should raise_error(Timeout::Error, "Request timed out after 1 second")
     end
 
     it "should not raise an error when the timeout is high enough" do
       driver.browser.timeout = 10
-      lambda { driver.visit("/") }.should_not raise_error(Capybara::TimeoutError)
+      lambda { visit("/") }.should_not raise_error(Timeout::Error)
     end
 
     it "should set the timeout for each request" do
       driver.browser.timeout = 10
-      lambda { driver.visit("/") }.should_not raise_error(Capybara::TimeoutError)
+      lambda { visit("/") }.should_not raise_error(Timeout::Error)
       driver.browser.timeout = 1
-      lambda { driver.visit("/") }.should raise_error(Capybara::TimeoutError)
+      lambda { visit("/") }.should raise_error(Timeout::Error)
     end
 
     it "should set the timeout for each request" do
       driver.browser.timeout = 1
-      lambda { driver.visit("/") }.should raise_error(Capybara::TimeoutError)
+      lambda { visit("/") }.should raise_error(Timeout::Error)
       driver.reset!
       driver.browser.timeout = 10
-      lambda { driver.visit("/") }.should_not raise_error(Capybara::TimeoutError)
+      lambda { visit("/") }.should_not raise_error(Timeout::Error)
     end
 
     it "should raise a timeout on a slow form" do
       driver.browser.timeout = 3
-      driver.visit("/")
+      visit("/")
       driver.status_code.should == 200
       driver.browser.timeout = 1
       driver.find("//input").first.click
-      lambda { driver.status_code }.should raise_error(Capybara::TimeoutError)
+      lambda { driver.status_code }.should raise_error(Timeout::Error)
     end
 
     it "get timeout" do
@@ -1899,19 +2101,18 @@ describe Capybara::Webkit::Driver do
 
   describe "logger app" do
     it "logs nothing before turning on the logger" do
-      driver.visit("/")
+      visit("/")
       log.should == ""
     end
 
     it "logs its commands after turning on the logger" do
       driver.enable_logging
-      driver.visit("/")
+      visit("/")
       log.should_not == ""
     end
 
     let(:driver) do
-      command = "#{Capybara::Webkit::Connection::SERVER_PATH} 2>&1"
-      connection = Capybara::Webkit::Connection.new(:command => command, :stdout => output)
+      connection = Capybara::Webkit::Connection.new(:stderr => output)
       browser = Capybara::Webkit::Browser.new(connection)
       Capybara::Webkit::Driver.new(AppRunner.app, :browser => browser)
     end
@@ -1921,6 +2122,62 @@ describe Capybara::Webkit::Driver do
     def log
       output.rewind
       output.read
+    end
+  end
+
+  context "synchronous ajax app" do
+    let(:driver) do
+      driver_for_app do
+        get '/' do
+          <<-HTML
+            <html>
+            <body>
+            <form id="theForm">
+            <input type="submit" value="Submit" />
+            </form>
+            <script>
+              document.getElementById('theForm').onsubmit = function() {
+                xhr = new XMLHttpRequest();
+                xhr.open('POST', '/', false);
+                xhr.setRequestHeader('Content-Type', 'text/plain');
+                xhr.send('hello');
+                console.log(xhr.response);
+              }
+            </script>
+            </body>
+            </html>
+          HTML
+        end
+
+        post '/' do
+          request.body.read
+        end
+      end
+    end
+
+    it 'should not hang the server' do
+      visit('/')
+      driver.find('//input').first.click
+      driver.console_messages.first[:message].should == "hello"
+    end
+  end
+
+  context "version" do
+    let(:driver) do
+      driver_for_html(<<-HTML)
+        <html><body></body></html>
+      HTML
+    end
+
+    before { visit("/") }
+
+    it "includes Capybara, capybara-webkit, Qt, and WebKit versions" do
+      result = driver.version
+      result.should include("Capybara: #{Capybara::VERSION}")
+      result.should include("capybara-webkit: #{Capybara::Driver::Webkit::VERSION}")
+      result.should =~ /Qt: \d+\.\d+\.\d+/
+      result.should =~ /WebKit: \d+\.\d+/
+      result.should =~ /QtWebKit: \d+\.\d+/
     end
   end
 

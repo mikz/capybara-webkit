@@ -17,26 +17,23 @@ $:.detect do |dir|
   end
 end
 
-RSpec.configure do |c|
-  c.filter_run_excluding :skip_on_windows => !(RbConfig::CONFIG['host_os'] =~ /mingw32/).nil?
-end
-
 require 'capybara/webkit'
-connection = Capybara::Webkit::Connection.new(:socket_class => TCPSocket, :stdout => nil)
+connection = Capybara::Webkit::Connection.new(:socket_class => TCPSocket)
 $webkit_browser = Capybara::Webkit::Browser.new(connection)
 
 if ENV['DEBUG']
   $webkit_browser.enable_logging
 end
 
-RSpec.configure do |config|
-  config.before { $webkit_browser.reset! }
-end
-
 require File.join(spec_dir, "spec_helper")
 
 Capybara.register_driver :reusable_webkit do |app|
   Capybara::Webkit::Driver.new(app, :browser => $webkit_browser)
+end
+
+RSpec.configure do |c|
+  c.filter_run_excluding :skip_on_windows => !(RbConfig::CONFIG['host_os'] =~ /mingw32/).nil?
+  Capybara::SpecHelper.configure(c)
 end
 
 def with_env_vars(vars)

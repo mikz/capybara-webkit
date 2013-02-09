@@ -1,7 +1,7 @@
 Capybara = {
   nextIndex: 0,
   nodes: {},
-  lastAttachedFile: "",
+  attachedFiles: [],
 
   invoke: function () {
     return this[CapybaraInvocation.functionName].apply(this, CapybaraInvocation.arguments);
@@ -41,7 +41,7 @@ Capybara = {
     if (type == "textarea") {
       return node.innerHTML;
     } else {
-      return node.innerText;
+      return node.innerText || node.textContent;
     }
   },
 
@@ -62,6 +62,10 @@ Capybara = {
     default:
       return this.nodes[index].getAttribute(name);
     }
+  },
+
+  hasAttribute: function(index, name) {
+    return this.nodes[index].hasAttribute(name);
   },
 
   path: function(index) {
@@ -272,7 +276,7 @@ Capybara = {
       }
 
     } else if (type === "file") {
-      this.lastAttachedFile = value;
+      this.attachedFiles = Array.prototype.slice.call(arguments, 1);
       this.click(index);
 
     } else {
@@ -294,7 +298,7 @@ Capybara = {
     this.trigger(index, "change");
   },
 
-  centerPostion: function(element) {
+  centerPosition: function(element) {
     this.reflow(element);
     var rect = element.getBoundingClientRect();
     var position = {
@@ -328,7 +332,7 @@ Capybara = {
 
   dragTo: function (index, targetIndex) {
     var element = this.nodes[index], target = this.nodes[targetIndex];
-    var position = this.centerPostion(element);
+    var position = this.centerPosition(element);
     var options = {
       clientX: position.x,
       clientY: position.y
@@ -343,13 +347,17 @@ Capybara = {
     options.clientY += 1;
     mouseTrigger('mousemove', options);
 
-    position = this.centerPostion(target);
+    position = this.centerPosition(target);
     options = {
       clientX: position.x,
       clientY: position.y
     };
     mouseTrigger('mousemove', options);
     mouseTrigger('mouseup', options);
+  },
+
+  equals: function(index, targetIndex) {
+    return this.nodes[index] === this.nodes[targetIndex];
   }
 };
 

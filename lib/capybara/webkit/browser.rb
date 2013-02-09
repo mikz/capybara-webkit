@@ -34,18 +34,13 @@ module Capybara::Webkit
       command("Body")
     end
 
-    def source
-      command("Source")
-    end
-
     def status_code
       command("Status").to_i
     end
 
     def console_messages
-      command("ConsoleMessages").split("\n").map do |messages|
-        parts = messages.split("|", 3)
-        { :source => parts.first, :line_number => Integer(parts[1]), :message => parts.last }
+      JSON.parse(command("ConsoleMessages")).map do |message|
+        message.inject({}) { |m,(k,v)| m.merge(k.to_sym => v) }
       end
     end
 
@@ -56,27 +51,19 @@ module Capybara::Webkit
     end
 
     def alert_messages
-      command("JavascriptAlertMessages").split("\n")
+      JSON.parse(command("JavascriptAlertMessages"))
     end
 
     def confirm_messages
-      command("JavascriptConfirmMessages").split("\n")
+      JSON.parse(command("JavascriptConfirmMessages"))
     end
 
     def prompt_messages
-      command("JavascriptPromptMessages").split("\n")
+      JSON.parse(command("JavascriptPromptMessages"))
     end
 
     def response_headers
       Hash[command("Headers").split("\n").map { |header| header.split(": ") }]
-    end
-
-    def url
-      command("Url")
-    end
-
-    def requested_url
-      command("RequestedUrl")
     end
 
     def current_url
@@ -141,6 +128,10 @@ module Capybara::Webkit
       command("ClearPromptText")
     end
 
+    def url_blacklist=(black_list)
+      command("SetUrlBlacklist", *Array(black_list))
+    end
+
     def command(name, *args)
       @connection.puts name
       @connection.puts args.size
@@ -198,6 +189,10 @@ module Capybara::Webkit
       command("ResizeWindow", width.to_i, height.to_i)
     end
 
+    def version
+      command("Version")
+    end
+
     private
 
     def check
@@ -209,7 +204,7 @@ module Capybara::Webkit
       elsif result != 'ok'
         case response = read_response
         when "timeout"
-          raise Capybara::TimeoutError, "Request timed out after #{timeout_seconds}"
+          raise Timeout::Error, "Request timed out after #{timeout_seconds}"
         else
           raise InvalidResponseError, response
         end
