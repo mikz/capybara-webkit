@@ -1029,7 +1029,7 @@ describe Capybara::Webkit::Driver do
 
     it "triggers right click" do
       watch.right_click
-      fired_events.should == %w(contextmenu)
+      fired_events.should == %w(mousedown contextmenu mouseup)
     end
   end
 
